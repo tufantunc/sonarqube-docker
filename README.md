@@ -129,6 +129,26 @@ You can scan as many projects as you like — each must have its own
 
 Each one shows up as a separate project in the SonarQube UI.
 
+### Tip: Shell function for everyday use
+
+Instead of typing the full `./scripts/scan.sh` path from each project directory,
+add a shell function to your `~/.zshrc` (or `~/.bashrc`):
+
+```bash
+sonar() {
+  ~/Desktop/Projects/Personal/sonarqube-docker/scripts/scan.sh "$(pwd)"
+}
+```
+
+Reload your shell, then from any project directory simply run:
+
+```bash
+sonar
+```
+
+This keeps the absolute path out of your project's `package.json` / scripts and
+works across all your local projects without polluting their repositories.
+
 ## Configuration (`.env`)
 
 All settings are controlled via `.env`. See `.env.example` for the full list:

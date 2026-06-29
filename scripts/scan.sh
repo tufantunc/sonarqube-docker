@@ -6,6 +6,7 @@
 #
 # Examples:
 #   ./scripts/scan.sh ../my-app
+#   ./scripts/scan.sh ~/Desktop/Projects/my-app
 #   ./scripts/scan.sh ../my-app -Dsonar.branch.name=main
 #
 # The target project must contain a sonar-project.properties file, OR you can
@@ -24,7 +25,9 @@ fi
 PROJECT_DIR="$1"
 shift || true
 
-# Resolve to an absolute path so Docker can mount it.
+# Expand a leading ~ (in case the user quoted the path) and resolve to an
+# absolute path so Docker can mount it.
+PROJECT_DIR="${PROJECT_DIR/#\~/$HOME}"
 PROJECT_DIR="$(cd "${PROJECT_DIR}" 2>/dev/null && pwd)" || {
   echo "Error: project directory not found: $1" >&2
   exit 1
@@ -36,9 +39,16 @@ if [[ ! -f "${REPO_DIR}/.env" ]]; then
 fi
 
 echo "==> Scanning: ${PROJECT_DIR}"
+
+# Export PROJECT_DIR for the HOST shell so docker compose picks it up during
+# variable interpolation (the compose file mounts `${PROJECT_DIR}:/usr/src`).
+# Note: `-e` on `docker compose run` would only set it INSIDE the container,
+# which happens too late — the volume mount has already been resolved.
+export PROJECT_DIR
+
 docker compose \
   --env-file "${REPO_DIR}/.env" \
   -f "${REPO_DIR}/docker-compose.yml" \
+  --profile scan \
   run --rm \
-  -e PROJECT_DIR="${PROJECT_DIR}" \
   scanner "$@"
