@@ -1,56 +1,79 @@
-#
-# Based on https://hub.docker.com/_/sonarqube
-#
-
-version: "3.7"
+# SonarQube + PostgreSQL + Scanner (Docker Compose)
+# Images are pinned for reproducibility; override versions via .env.
 
 services:
 
   sonarqube:
+    image: sonarqube:${SONARQUBE_VERSION:-community}
     container_name: sonarqube
-    image: sonarqube:community
-    privileged: true
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
-      - "9000:9000"
-    restart: unless-stopped
+      - "${SONARQUBE_PORT:-9000}:9000"
     environment:
-      - SONAR_JDBC_URL=jdbc:postgresql://db:5432/sonar
-      - SONAR_JDBC_USERNAME=sonar
-      - SONAR_JDBC_PASSWORD=sonar
-    networks:
-      - sonarnet
+      SONAR_JDBC_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-sonar}
+      SONAR_JDBC_USERNAME: ${POSTGRES_USER:-sonar}
+      SONAR_JDBC_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      # Optional: tune for your environment
+      SONAR_SEARCH_JAVAADDITIONALOPTS: "-Dbootstrap.system_call_filter=false"
     volumes:
       - sonarqube_conf:/opt/sonarqube/conf
       - sonarqube_data:/opt/sonarqube/data
       - sonarqube_logs:/opt/sonarqube/logs
       - sonarqube_extensions:/opt/sonarqube/extensions
-      - sonarqube_bundled-plugins:/opt/sonarqube/lib/bundled-plugins
+      - sonarqube_bundled_plugins:/opt/sonarqube/lib/bundled-plugins
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 131072
+    healthcheck:
+      # bash is present in the image; checks the web port is accepting connections.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000' 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    restart: unless-stopped
+    networks:
+      - sonarnet
 
   db:
+    image: postgres:${POSTGRES_VERSION:-17}
     container_name: sonardb
-    image: postgres
-    networks:
-      - sonarnet
     environment:
-      - POSTGRES_USER=sonar
-      - POSTGRES_PASSWORD=sonar
+      POSTGRES_USER: ${POSTGRES_USER:-sonar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-sonar}
     volumes:
-      - sonar_postgresql:/var/lib/postgresql
       - sonar_postgresql_data:/var/lib/postgresql/data
-
-  sonarscanner:
-    container_name: sonarscanner
-    image: sonarsource/sonar-scanner-cli
-    environment:
-      - SONAR_HOST_URL=http://sonarqube:9000
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sonar} -d ${POSTGRES_DB:-sonar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
     networks:
       - sonarnet
+
+  # On-demand scanner. Kept out of the default `up` via the "scan" profile:
+  #   docker compose --profile scan run --rm scanner
+  # Use scripts/scan.sh <project-dir> for convenience.
+  scanner:
+    image: sonarsource/sonar-scanner-cli:${SCANNER_VERSION:-12}
+    container_name: sonarscanner
+    profiles: ["scan"]
+    depends_on:
+      sonarqube:
+        condition: service_healthy
+    environment:
+      SONAR_HOST_URL: http://sonarqube:9000
+      SONAR_TOKEN: ${SONAR_TOKEN:?Set SONAR_TOKEN in .env}
     volumes:
       - sonarscanner_cache:/opt/sonar-scanner/.sonar/cache
-      # change following volume path to your project directory
-      - ./:/usr/src
+      - ${PROJECT_DIR:-.}:/usr/src
+    networks:
+      - sonarnet
 
 networks:
   sonarnet:
@@ -60,7 +83,6 @@ volumes:
   sonarqube_data:
   sonarqube_logs:
   sonarqube_extensions:
-  sonarqube_bundled-plugins:
-  sonar_postgresql:
+  sonarqube_bundled_plugins:
   sonar_postgresql_data:
   sonarscanner_cache:

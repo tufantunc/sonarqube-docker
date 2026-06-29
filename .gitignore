@@ -1,0 +1,10 @@
+# Secrets / local config
+.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
