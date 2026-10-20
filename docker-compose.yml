@@ -20,7 +20,12 @@ services:
       - sonarqube_data:/opt/sonarqube/data
       - sonarqube_logs:/opt/sonarqube/logs
       - sonarqube_extensions:/opt/sonarqube/extensions
-      - sonarqube_bundled_plugins:/opt/sonarqube/lib/bundled-plugins
+      # No volume on lib/bundled-plugins (removed 2026-10-05). In 26.x that directory is empty — the
+      # bundled analyzers ship in lib/extensions, straight from the image — so the old mount kept
+      # nothing. It would also be a trap if an image ever put plugins there again: Docker fills a
+      # named volume from the image only while it is empty, so an upgrade would keep serving the
+      # PREVIOUS version's jars. Bundled analyzers must come from the image; third-party plugins
+      # belong in extensions/ (above), which is meant to persist.
     ulimits:
       nofile:
         soft: 65536
@@ -81,6 +86,5 @@ volumes:
   sonarqube_data:
   sonarqube_logs:
   sonarqube_extensions:
-  sonarqube_bundled_plugins:
   sonar_postgresql_data:
   sonarscanner_cache:
