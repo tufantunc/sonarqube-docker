@@ -46,9 +46,25 @@ echo "==> Scanning: ${PROJECT_DIR}"
 # which happens too late — the volume mount has already been resolved.
 export PROJECT_DIR
 
+# Hide tool state the scanner must never walk. A sensor that walks the whole project root,
+# whatever sonar.sources says, crashes on a live Unix socket: the Docker Desktop file share cannot
+# stat a socket from inside the container (NoSuchFileException). sonar-python's
+# PackageRootResolver does that walk (looking for pyproject.toml/setup.py) as soon as one .py file
+# is indexed, and the CodeGraph daemon keeps .codegraph/daemon.sock open while it runs — so the
+# scan failed only while the daemon was up. An empty anonymous volume over the directory hides it.
+# Mounted only when the directory exists, so scanning a project without one does not create it.
+MASKS=()
+for dir in .codegraph; do
+  if [[ -d "${PROJECT_DIR}/${dir}" ]]; then
+    MASKS+=(-v "/usr/src/${dir}")
+  fi
+done
+
+# `${MASKS[@]+…}`: macOS ships bash 3.2, where an empty array trips `set -u` as unbound.
 docker compose \
   --env-file "${REPO_DIR}/.env" \
   -f "${REPO_DIR}/docker-compose.yml" \
   --profile scan \
   run --rm \
+  ${MASKS[@]+"${MASKS[@]}"} \
   scanner "$@"
